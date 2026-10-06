@@ -1,233 +1,126 @@
-# Checkpoint 4 -  Arquitetura Orientada a Serviços (SOA) e Web Services:
-# API REST – Autoescola
+# AutoEscola API - Checkpoint 5
+
+API **ReST** desenvolvida com **Spring Boot 3 (Java 17)** para agendamento de instruções (aulas práticas) de uma auto-escola.
+
+**Disciplina:** SOA e WebServices — **Professor:** Carlos Eduardo Machado de Oliveira — **FIAP**
+
+## Integrantes do Grupo
+
+> ⚠️ Substitua pelos nomes reais dos integrantes (até 5 membros, mesmo grupo do Challenge).
+
+| # | Nome | RA |
+|---|------|----|
+| 1 | _Nome do integrante 1_ | _RA_ |
+| 2 | _Nome do integrante 2_ | _RA_ |
+| 3 | _Nome do integrante 3_ | _RA_ |
+| 4 | _Nome do integrante 4_ | _RA_ |
+| 5 | _Nome do integrante 5_ | _RA_ |
 
 ---
 
-## Nomes e RM dos Integrantes
+## O que a API entrega
 
-- Matheus Taylor – RM556211
-- Henrique Maldonado – RM557270
-- Yuri Silveira – RM557475
+### ✔️ Já implementado (checkpoints anteriores)
+- **CRUD completo** para: Instrutores (`/api/instrutores`), Alunos (`/api/alunos`), Usuários (`/api/usuarios`) e Instruções (`/api/instrucoes`).
+- **Serviço de agendamento e cancelamento** com regras de negócio:
+  - **R1** — Início anterior ao término; duração máxima de 4 horas.
+  - **R2** — Somente dias úteis, dentro do horário comercial (08h–18h, mesmo dia).
+  - **R3** — Proibição de sobreposição de agenda do instrutor (conflito).
+  - **R4** — Aluno deve estar com processo ativo (À_BAURA ou EM_ANDAMENTO).
+  - **R5** — Antecedência mínima de 24h para agendar.
+  - **R6** — Cancelamento apenas de instruções `AGENDADA`, com antecedência mínima de 24h; limite configurável de cancelamentos por aluno (`app.regra.limite-cancelamentos`).
+- Tratamento global de erros (`@RestControllerAdvice`) com payloads padronizados.
+- Banco H2 em memória para dev/testes (driver PostgreSQL incluído para produção).
 
-### **Turma:** 3ESPH – Manhã  
-###  **Professor:** Carlos Eduardo Machado de Oliveira
+### ✅ Novidades do Checkpoint 5
 
----
+#### 1. Consumo de API externa (ViaCEP)
+- `client/ViaCepClient.java`: usa o **`RestClient`** do Spring Framework 6 para consultar `https://viacep.com.br/ws/{cep}/json/`.
+- Exposta em `GET /api/cep/{cep}` (`controller/CepController.java`).
+- Usada automaticamente pelo `EnderecoService`: ao cadastrar aluno/instrutor informando apenas o CEP, logradouro/bairro/cidade/UF são preenchidos pela consulta externa (com fallback para dados manuais e tratamento de indisponibilidade → HTTP 503).
+- URL configurável via `app.api.viacep.base-url`.
 
-## Breve Descreção:
+#### 2. Documentação automática com Swagger/OpenAPI 3
+- Dependência `springdoc-openapi-starter-webmvc-ui` + customização em `config/OpenApiConfig.java`.
+- Anotações `@Tag`, `@Operation` e `@Schema` nos controllers e DTOs.
+- Acesse:
+  - **Swagger UI:** http://localhost:8080/swagger-ui.html
+  - **Spec OpenAPI:** http://localhost:8080/v3/api-docs
 
-Projeto desenvolvido para os Checkpoints 3 e 4 da disciplina **Arquitetura Orientada a Serviços (SOA) e Web Services**.
+#### 3. Configuração de CORS
+- `config/CorsConfig.java` (`WebMvcConfigurer`) libera `/api/**` para os métodos `GET, POST, PUT, PATCH, DELETE, OPTIONS`, com credenciais e `maxAge`.
+- Origens permitidas configuráveis via propriedade `app.cors.allowed-origins` (padrão: `http://localhost:3000,http://localhost:5173`).
 
-## Funcionalidades Principais
+#### 4. Testes automatizados por entidade
+| Classe | Cobre |
+|--------|-------|
+| `AlunoControllerTest` | CRUD de alunos, unicidade de CPF, validações de payload |
+| `InstrutorControllerTest` | CRUD de instrutores, unicidade de CNH/CPF, validações |
+| `UsuarioControllerTest` | CRUD de usuários, login duplicado, perfil inválido, senha curta |
+| `InstrucaoControllerTest` | Agendamento/cancelamento/conclusão + regras R1, R3, R5, R6 |
+| `ViaCepClientTest` | Cliente externo com `MockRestServiceServer` (sem rede): sucesso, CEP inexistente, erro 5xx, formato inválido |
 
-### Instrutores 
-- Cadastro completo (nome, e-mail, telefone, CNH, especialidade, endereço)
-- Listagem paginada (10/pág) ordenada por nome
-- Atualização (só nome, telefone e endereço)
-- Exclusão lógica (soft delete)
-
-### Alunos 
-- Cadastro completo (nome, e-mail, telefone, CPF, endereço)
-- Listagem paginada (10/pág) ordenada por nome
-- Atualização (só nome, telefone e endereço)
-- **Exclusão lógica (soft delete)** ← ajustado no CP4
-
-### Usuários e Autenticação 
-- Cadastro de usuários com senha criptografada (BCrypt)
-- Login com geração de token **JWT**
-- Apenas **ADMIN** pode cadastrar, listar, atualizar perfil e excluir usuários
-- Qualquer usuário autenticado pode **alterar a própria senha**
-- Todos os endpoints (exceto `/api/auth/login`) exigem token JWT válido
-
-### Agendamento de Instruções 
-- Cadastro de instrução (aluno, instrutor, data/hora)
-- Regras:
-  - Seg–Sáb, 06:00–21:00
-  - Duração fixa de 1h
-  - Antecedência mínima de 30 min
-  - Aluno e instrutor devem estar ativos
-  - Máx. 2 instruções/dia por aluno
-  - Instrutor não pode ter conflito de horário
-  - Instrutor é **opcional** (senão, escolha aleatória)
-- **Cancelamento** com motivo obrigatório (`ALUNO_DESISTIU`, `INSTRUTOR_CANCELOU`, `OUTROS`) e antecedência mínima de 24h
-
-## Estrutura Geral do Projeto:
-```text
-cp4-autoescola-api/
-├── pom.xml                                
-├── README.md                              
-├── src/main/java/br/com/fiap/autoescola/
-│   ├── AutoEscolaApplication.java
-│   ├── config
-│   │   ├── DataInitializer.java           
-│   │   └── SecurityConfig.java            
-│   ├── controller
-│   │   ├── AlunoController.java
-│   │   ├── AuthController.java            
-│   │   ├── InstrutorController.java
-│   │   ├── InstrucaoController.java      
-│   │   └── UsuarioController.java         
-│   ├── dto
-│   │   ├── ... 
-│   │   ├── AlterarSenhaDTO.java           
-│   │   ├── InstrucaoCreateDTO.java        
-│   │   ├── InstrucaoCancelamentoDTO.java  
-│   │   ├── LoginDTO.java                  
-│   │   ├── TokenDTO.java                  
-│   │   ├── UsuarioCreateDTO.java          
-│   │   └── UsuarioUpdateDTO.java          
-│   ├── entity
-│   │   ├── ... 
-│   │   ├── Instrucao.java                 
-│   │   ├── MotivoCancelamento.java        
-│   │   ├── Role.java                      
-│   │   ├── StatusInstrucao.java          
-│   │   └── Usuario.java                   
-│   ├── exception
-│   │   ├── ... 
-│   │   └── GlobalSecurityExceptionHandler.java 
-│   ├── mapper
-│   │   ├── ... 
-│   │   ├── InstrucaoMapper.java           
-│   │   └── UsuarioMapper.java             
-│   ├── repository
-│   │   ├── ... 
-│   │   ├── InstrucaoRepository.java       
-│   │   └── UsuarioRepository.java         
-│   ├── security
-│   │   ├── JwtAuthenticationFilter.java   
-│   │   ├── JwtService.java                
-│   │   └── UserDetailsServiceImpl.java    
-│   ├── service
-│   │   ├── ... 
-│   │   ├── AuthService.java               
-│   │   ├── InstrucaoService.java          
-│   │   └── UsuarioService.java            
-│   └── vo
-│       ├── ... 
-│       ├── InstrucaoVO.java               
-│       └── UsuarioVO.java                 
-└── src/main/resources
-    ├── application.yml                    
-    └── db/migration
-        ├── V1__create_tables.sql          
-        ├── V2__add_ativo_alunos.sql       
-        ├── V3__create_usuarios.sql        
-        └── V4__create_instrucoes.sql      
-```
-
-## Tecnologias Utilizadas
-
-- Java 17
-- Spring Boot 3.2.5
-- Spring Security + JWT (jjwt)
-- Spring Data JPA
-- Flyway
-- PostgreSQL
-- Bean Validation
-- Lombok
-
-## Como executar
-
-1. Crie o banco PostgreSQL `autoescola`.
-2. Ajuste credenciais em `application.yml` se necessário.
-3. Execute:
-   ```bash
-   mvn spring-boot:run
-   ```
-4. Usuário admin padrão (criado automaticamente): **admin / admin123** (altere após o primeiro login).
-
-## Autenticação
-
-1. `POST /api/auth/login` → retorna o token.
-2. Envie `Authorization: Bearer <TOKEN>` nas demais requisições.
-
-## Endpoints principais
-
-| Método | Endpoint | Descrição | Perfil |
-|--------|----------|-----------|--------|
-| POST | `/api/auth/login` | Login | Público |
-| POST | `/api/usuarios` | Cadastrar usuário | ADMIN |
-| GET | `/api/usuarios` | Listar usuários | ADMIN |
-| GET | `/api/usuarios/{id}` | Buscar usuário | ADMIN |
-| PUT | `/api/usuarios/{id}/perfil` | Atualizar perfil | ADMIN |
-| DELETE | `/api/usuarios/{id}` | Excluir usuário | ADMIN |
-| PUT | `/api/usuarios/me/senha` | Alterar própria senha | Autenticado |
-| POST | `/api/instrutores` | Cadastrar instrutor | Autenticado |
-| GET | `/api/instrutores?page=0` | Listar instrutores | Autenticado |
-| PUT | `/api/instrutores/{id}` | Atualizar instrutor | Autenticado |
-| DELETE | `/api/instrutores/{id}` | Inativar instrutor | Autenticado |
-| POST | `/api/alunos` | Cadastrar aluno | Autenticado |
-| GET | `/api/alunos?page=0` | Listar alunos | Autenticado |
-| PUT | `/api/alunos/{id}` | Atualizar aluno | Autenticado |
-| DELETE | `/api/alunos/{id}` | Inativar aluno | Autenticado |
-| POST | `/api/instrucoes` | Agendar instrução | Autenticado |
-| GET | `/api/instrucoes` | Listar instruções | Autenticado |
-| PUT | `/api/instrucoes/{id}/cancelamento` | Cancelar instrução | Autenticado |
-
-## Exemplos de Requisição
-
-### Cadastrar Instrutor
-```json
-{
-  "nome": "João Silva",
-  "email": "joao.silva@email.com",
-  "telefone": "(11) 99999-9999",
-  "cnh": "12345678900",
-  "especialidade": "CARROS",
-  "endereco": {
-    "logradouro": "Rua das Flores",
-    "numero": "123",
-    "complemento": "Apto 45",
-    "bairro": "Centro",
-    "cidade": "São Paulo",
-    "uf": "SP",
-    "cep": "01001-000"
-  }
-}
-```
-
-### Atualizar Instrutor
-```json
-{
-  "nome": "João Silva Santos",
-  "telefone": "(11) 98888-8888",
-  "endereco": {
-    "logradouro": "Av. Paulista",
-    "numero": "1000",
-    "complemento": "Sala 10",
-    "bairro": "Bela Vista",
-    "cidade": "São Paulo",
-    "uf": "SP",
-    "cep": "01310-100"
-  }
-}
-```
-
-### Cadastrar Aluno
-```json
-{
-  "nome": "Maria Oliveira",
-  "email": "maria.oliveira@email.com",
-  "telefone": "(11) 97777-7777",
-  "cpf": "123.456.789-00",
-  "endereco": {
-    "logradouro": "Rua dos Pinheiros",
-    "numero": "456",
-    "bairro": "Pinheiros",
-    "cidade": "São Paulo",
-    "uf": "SP",
-    "cep": "05422-000"
-  }
-}
-```
+Executar: `mvn test`
 
 ---
 
-## Observações
+## Como rodar
 
-- O campo `telefone` do instrutor não é exibido na listagem, conforme solicitado.
-- A exclusão de instrutor é lógica (soft delete), mantendo os dados no banco com `ativo = false`.
-- As migrações do banco são controladas pelo Flyway.
+```bash
+# requisito: JDK 17+ (Maven 3.9+ ou use ./mvnw se adicionar o wrapper)
+mvn spring-boot:run
+```
 
----
+- Porta padrão: **8080**
+- Swagger UI: `http://localhost:8080/swagger-ui.html`
+- Console H2 (dev): `http://localhost:8080/h2-console` (JDBC URL `jdbc:h2:mem:autoescola`, user `sa`, senha vazia)
+
+### Exemplo rápido (cURL)
+
+```bash
+# Criar instrutor (endereço enriquecido automaticamente via ViaCEP)
+curl -X POST http://localhost:8080/api/instrutores -H "Content-Type: application/json" -d '{
+  "nome": "Carlos Eduardo", "cpf": "123.456.789-00", "cnh": "01234567890",
+  "dataNascimento": "1985-05-10", "endereco": { "cep": "01310-100" }
+}'
+
+# Criar aluno
+curl -X POST http://localhost:8080/api/alunos -H "Content-Type: application/json" -d '{
+  "nome": "Maria da Silva", "cpf": "987.654.321-00",
+  "dataNascimento": "2000-01-15", "endereco": { "cep": "04538-133" }
+}'
+
+# Agendar uma aula prática (dia útil, 08h-18h, com >24h de antecedência)
+curl -X POST http://localhost:8080/api/instrucoes -H "Content-Type: application/json" -d '{
+  "alunoId": 1, "instrutorId": 1,
+  "dataHoraInicio": "2026-10-20T14:00:00", "dataHoraFim": "2026-10-20T15:00:00",
+  "categoria": "B", "observacao": "Aula de baliza"
+}'
+
+# Cancelar a aula
+curl -X PATCH http://localhost:8080/api/instrucoes/1/cancelamento -H "Content-Type: application/json" -d '{
+  "motivo": "Imprevisto do aluno"
+}'
+
+# Consulta direta à API externa ViaCEP
+curl http://localhost:8080/api/cep/01310-100
+```
+
+## Estrutura do projeto
+
+```
+src/main/java/com/fiap/autoescola
+├── AutoEscolaApplication.java
+├── client/      -> ViaCepClient, ViaCepResponse (API externa)
+├── config/      -> OpenApiConfig (Swagger), CorsConfig (CORS), RestClientConfig
+├── controller/  -> Instrutor, Aluno, Usuario, Instrucao, Cep
+├── dto/         -> Request/Response + ErroResponse
+├── exception/   -> GlobalExceptionHandler + exceções de domínio
+├── model/       -> Entidades JPA + enums de status
+├── repository/  -> Spring Data JPA
+└── service/     -> Regras de negócio (agendamento/cancelamento, endereço c/ ViaCEP)
+```
+
+## Entrega
+
+Publicar este repositório no GitHub (público), com os nomes dos integrantes na tabela acima, e enviar o link na tarefa do Teams (entrega até **12/10/2026**). Contato: pf2308@fiap.com.br.
